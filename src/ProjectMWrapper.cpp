@@ -19,8 +19,10 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
     {
         auto& sdlWindow = app.getSubsystem<SDLRenderingWindow>();
 
-        int canvasWidth{0};
-        int canvasHeight{0};
+        int canvasWidth = app.config().getInt("window.width", 1024);
+        int canvasHeight = app.config().getInt("window.height", 768);
+
+
 
         sdlWindow.GetDrawableSize(canvasWidth, canvasHeight);
 

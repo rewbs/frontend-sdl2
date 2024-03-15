@@ -32,7 +32,7 @@ void RenderLoop::Run()
 {
     ma_result result;
     ma_decoder decoder;
-    std::string audioFilePath = "/home/rewbs/Four-Four-short.mp3";
+    std::string audioFilePath = "/home/rewbs/ArtThing.mp3";
     FPSLimiter limiter;
     int targetFps = _projectMWrapper.TargetFPS();
     
@@ -55,44 +55,36 @@ void RenderLoop::Run()
     ma_uint64 offset = audioFramesPerVideoFrame - maxSamplesForProcessing;
     std::vector<float> pcmBuffer(audioFramesPerVideoFrame * decoder.outputChannels); // Adjust buffer size based on channel count.
 
-
     std::ostringstream msgStream;
-    msgStream << "Sample rate: " << decoder.outputSampleRate << "; fps: " << targetFps << "; audioFramesPerVideoFrame: " << audioFramesPerVideoFrame;
+    msgStream << "Sample rate: " << decoder.outputSampleRate << "; fps: " << targetFps << "; audioFramesPerVideoFrame: " << audioFramesPerVideoFrame
+              << " total samples: " << decoder.data.memory.dataSize;
     poco_information(_logger, msgStream.str());
 
-    // array of std::vector<unsigned char> * buffers. Allocate space for up to 1000 frame pointers.
-    std::vector<std::unique_ptr<std::vector<unsigned char>>> buffers = std::vector<std::unique_ptr<std::vector<unsigned char>>>(1000);
-    std::unique_ptr<std::vector<unsigned char>> rawFrame;
-
-    // Prepare ffmpeg to receive streamed frames for encoding.
-    // TODO don't hardcode dimensions
-    int width = 1024;
-    int height = 768;
+     _renderWidth = 1024;
+     _renderHeight = 768;
+     projectm_set_window_size(_projectMHandle, _renderWidth, _renderHeight);
     std::string ffmpeg_cmd = "ffmpeg -y -pix_fmt rgba "
-                             " -f rawvideo "
-                             " -s " + std::to_string(width) + "x" + std::to_string(height)
-                             + " -r " + std::to_string(targetFps)
+                             " -r " + std::to_string(targetFps)
+                             + " -f rawvideo "
+                             + " -s " + std::to_string(_renderWidth) + "x" + std::to_string(_renderHeight)
+                             + " -thread_queue_size 4096 "
                              + " -i - "
                              + " -i \"" + audioFilePath + "\" "
                              + " -c:v libx264 -pix_fmt yuv420p"
                              + " -shortest "
+                             + " -preset fast"
                              + " output.mp4";
+    
+    std::cout << "ffmpeg command: " << ffmpeg_cmd << "\n";
     FILE* ffmpeg = popen(ffmpeg_cmd.c_str(), "w");
     if (!ffmpeg) {
         std::cerr << "Failed to start ffmpeg process. Is ffmpeg available and on the PATH?" << std::endl;
         return;
     }    
-
+   
     int frame = 0;
     while (!_wantsToQuit) // TODO fix up frame limit
     {
-        //limiter.StartFrame();
-        PollEvents();
-        CheckViewportSize();
-        //_audioCapture.FillBuffer();
-
-
-        //maxSamples = projectm_pcm_get_max_samples();
         result = ma_decoder_read_pcm_frames(&decoder, pcmBuffer.data(), audioFramesPerVideoFrame, NULL);
         if (result != MA_SUCCESS)
         {
@@ -104,64 +96,25 @@ void RenderLoop::Run()
         // TODO: can do smarter decimation here to keep significant events from the full buffer.
         projectm_pcm_add_float(_projectMHandle, pcmBuffer.data()+offset, maxSamplesForProcessing * decoder.outputChannels, static_cast<projectm_channels>(decoder.outputChannels));
 
-        // Accumulate all frames in memory.
-        rawFrame = _projectMWrapper.RenderFrameToBuffer();
+        // Get pointer to raw frame data
+        std::unique_ptr<std::vector<unsigned char>> rawFramePtr = _projectMWrapper.RenderFrameToBuffer();
 
-        if (rawFrame != NULL) {
-            // Assuming buffers[i]->data() returns a pointer to the RGBA pixel data
-            fwrite(rawFrame->data(), width*4, rawFrame->size(), ffmpeg);
+        // Stream frame data to ffmpeg process for immediate encoding.
+        if (rawFramePtr != NULL) {
+            fwrite(rawFramePtr->data(), rawFramePtr->size(), 1, ffmpeg);
         } else {
-            std::cout << "Frame NOT processed: " << frame << std::endl;
+            std::cerr << "WARNING: invalid frame, NOT saved to video: " << frame << std::endl;
         }
 
-
-        //_sdlRenderingWindow.Swap();
-        //limiter.EndFrame();
+        frame++;
     }
 
-    // save all frames to file.
-    // for (int i = 0; i < frame; i++)
-    // {
-    //     std::string filename;
-    //     filename = "frame" + std::to_string(i) + ".png";
-
-    //     if (buffers[i] != NULL) {
-    //        stbi_write_png(filename.c_str(), width, height, 4, (buffers[i])->data(), width * 4);
-    //         std::cout << "Texture saved to: " << filename << std::endl;
-    //     } else {
-    //         std::cout << "Texture NOT saved: " << filename << std::endl;
-    //     }
-
-    // }
-
-
-    // //save all frames to raw file.
-    // for (int i = 0; i < frame; i++)
-    // {    
-    //     std::string filename = "frame" + std::to_string(i) + ".raw";
-    //     std::ofstream outputFile(filename.c_str(), std::ios::out | std::ios::binary);
-    //     if (!outputFile) {
-    //         std::cerr << "Failed to open the output file." << std::endl;
-    //         return; // Return with error code
-    //     }
-    //     outputFile.write(reinterpret_cast<const char*>((buffers[i])->data()), buffers[i]->size());
-    //     outputFile.close();
-    // }
-
-    // for (int i = 0; i < frame; i++) {
-    //     if (buffers[i] != NULL) {
-    //         // Assuming buffers[i]->data() returns a pointer to the RGBA pixel data
-    //         fwrite((buffers[i])->data(), width*4, /*width * height * 4*/ buffers[0]->size(), ffmpeg);
-    //     } else {
-    //         std::cout << "Frame NOT processed: " << i << std::endl;
-    //     }
-    // }
 
     int ffmpeg_close_status = pclose(ffmpeg);
     if (ffmpeg_close_status == -1) {
         std::cerr << "Error closing ffmpeg process" << std::endl;
     } else {
-        std::cout << "Video saved to output.mp4" << std::endl;
+        std::cout << "Video saved" << std::endl;
     }
 
     projectm_playlist_set_preset_switched_event_callback(_playlistHandle, nullptr, nullptr);
