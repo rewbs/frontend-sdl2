@@ -99,6 +99,14 @@ void ProjectMWrapper::RenderFrame() const
     projectm_opengl_render_frame(_projectM);
 }
 
+std::unique_ptr<std::vector<unsigned char>> ProjectMWrapper::RenderFrameToBuffer() const
+{
+    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    return projectm_opengl_render_frame_to_buffer(_projectM);
+}
+
 void ProjectMWrapper::DisplayInitialPreset()
 {
     if (!_config->getBool("enableSplash", true))

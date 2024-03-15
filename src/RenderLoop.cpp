@@ -15,6 +15,10 @@
 
 #include <SDL2/SDL.h>
 
+#include <cstdio>
+#include <array>
+#include <fstream>
+
 RenderLoop::RenderLoop()
     : _audioCapture(Poco::Util::Application::instance().getSubsystem<AudioCapture>())
     , _projectMWrapper(Poco::Util::Application::instance().getSubsystem<ProjectMWrapper>())
@@ -28,15 +32,17 @@ void RenderLoop::Run()
 {
     ma_result result;
     ma_decoder decoder;
-    std::string filePath = "/home/rewbs/benz.mp3";
+    std::string audioFilePath = "/home/rewbs/Four-Four-short.mp3";
     FPSLimiter limiter;
-    limiter.TargetFPS(_projectMWrapper.TargetFPS());
+    int targetFps = _projectMWrapper.TargetFPS();
+    
+    limiter.TargetFPS(targetFps);
 
     projectm_playlist_set_preset_switched_event_callback(_playlistHandle, &RenderLoop::PresetSwitchedEvent, static_cast<void*>(this));
     _projectMWrapper.DisplayInitialPreset();
 
     // Initialize the decoder.
-    result = ma_decoder_init_file(filePath.c_str(), NULL, &decoder);
+    result = ma_decoder_init_file(audioFilePath.c_str(), NULL, &decoder);
     if (result != MA_SUCCESS)
     {
         std::cerr << "Failed to initialize decoder." << std::endl;
@@ -44,36 +50,118 @@ void RenderLoop::Run()
     }
 
     // Variables for decoding in chunks.
-    ma_uint64 maxSamples = projectm_pcm_get_max_samples();
-    std::vector<float> pcmBuffer(maxSamples * decoder.outputChannels); // Adjust buffer size based on channel count.
+    int audioFramesPerVideoFrame = decoder.outputSampleRate / targetFps;
+    ma_uint64 maxSamplesForProcessing = projectm_pcm_get_max_samples();
+    ma_uint64 offset = audioFramesPerVideoFrame - maxSamplesForProcessing;
+    std::vector<float> pcmBuffer(audioFramesPerVideoFrame * decoder.outputChannels); // Adjust buffer size based on channel count.
 
-    while (!_wantsToQuit)
+
+    std::ostringstream msgStream;
+    msgStream << "Sample rate: " << decoder.outputSampleRate << "; fps: " << targetFps << "; audioFramesPerVideoFrame: " << audioFramesPerVideoFrame;
+    poco_information(_logger, msgStream.str());
+
+    // array of std::vector<unsigned char> * buffers. Allocate space for up to 1000 frame pointers.
+    std::vector<std::unique_ptr<std::vector<unsigned char>>> buffers = std::vector<std::unique_ptr<std::vector<unsigned char>>>(1000);
+    std::unique_ptr<std::vector<unsigned char>> rawFrame;
+
+    // Prepare ffmpeg to receive streamed frames for encoding.
+    // TODO don't hardcode dimensions
+    int width = 1024;
+    int height = 768;
+    std::string ffmpeg_cmd = "ffmpeg -y -pix_fmt rgba "
+                             " -f rawvideo "
+                             " -s " + std::to_string(width) + "x" + std::to_string(height)
+                             + " -r " + std::to_string(targetFps)
+                             + " -i - "
+                             + " -i \"" + audioFilePath + "\" "
+                             + " -c:v libx264 -pix_fmt yuv420p"
+                             + " -shortest "
+                             + " output.mp4";
+    FILE* ffmpeg = popen(ffmpeg_cmd.c_str(), "w");
+    if (!ffmpeg) {
+        std::cerr << "Failed to start ffmpeg process. Is ffmpeg available and on the PATH?" << std::endl;
+        return;
+    }    
+
+    int frame = 0;
+    while (!_wantsToQuit) // TODO fix up frame limit
     {
-        limiter.StartFrame();
+        //limiter.StartFrame();
         PollEvents();
         CheckViewportSize();
         //_audioCapture.FillBuffer();
 
 
         //maxSamples = projectm_pcm_get_max_samples();
-        result = ma_decoder_read_pcm_frames(&decoder, pcmBuffer.data(), maxSamples, NULL);
+        result = ma_decoder_read_pcm_frames(&decoder, pcmBuffer.data(), audioFramesPerVideoFrame, NULL);
         if (result != MA_SUCCESS)
         {
             poco_information(_logger, "End of file or an error has occurred.");
             break;
         }
 
-        //std::ostringstream msgStream;
-        //msgStream << "maxSamples: " << maxSamples;
-        //poco_information(_logger, msgStream.str());
+        // Pass the chunk of PCM data to projectM. Take the last maxSamplesForProcessing samples from the buffer, i.e. the ones from just before this video frame.
+        // TODO: can do smarter decimation here to keep significant events from the full buffer.
+        projectm_pcm_add_float(_projectMHandle, pcmBuffer.data()+offset, maxSamplesForProcessing * decoder.outputChannels, static_cast<projectm_channels>(decoder.outputChannels));
+
+        // Accumulate all frames in memory.
+        rawFrame = _projectMWrapper.RenderFrameToBuffer();
+
+        if (rawFrame != NULL) {
+            // Assuming buffers[i]->data() returns a pointer to the RGBA pixel data
+            fwrite(rawFrame->data(), width*4, rawFrame->size(), ffmpeg);
+        } else {
+            std::cout << "Frame NOT processed: " << frame << std::endl;
+        }
 
 
-        // Pass the chunk of PCM data to projectM.
-        projectm_pcm_add_float(_projectMHandle, pcmBuffer.data(), maxSamples * decoder.outputChannels, static_cast<projectm_channels>(decoder.outputChannels));
+        //_sdlRenderingWindow.Swap();
+        //limiter.EndFrame();
+    }
 
-        _projectMWrapper.RenderFrame();
-        _sdlRenderingWindow.Swap();
-        limiter.EndFrame();
+    // save all frames to file.
+    // for (int i = 0; i < frame; i++)
+    // {
+    //     std::string filename;
+    //     filename = "frame" + std::to_string(i) + ".png";
+
+    //     if (buffers[i] != NULL) {
+    //        stbi_write_png(filename.c_str(), width, height, 4, (buffers[i])->data(), width * 4);
+    //         std::cout << "Texture saved to: " << filename << std::endl;
+    //     } else {
+    //         std::cout << "Texture NOT saved: " << filename << std::endl;
+    //     }
+
+    // }
+
+
+    // //save all frames to raw file.
+    // for (int i = 0; i < frame; i++)
+    // {    
+    //     std::string filename = "frame" + std::to_string(i) + ".raw";
+    //     std::ofstream outputFile(filename.c_str(), std::ios::out | std::ios::binary);
+    //     if (!outputFile) {
+    //         std::cerr << "Failed to open the output file." << std::endl;
+    //         return; // Return with error code
+    //     }
+    //     outputFile.write(reinterpret_cast<const char*>((buffers[i])->data()), buffers[i]->size());
+    //     outputFile.close();
+    // }
+
+    // for (int i = 0; i < frame; i++) {
+    //     if (buffers[i] != NULL) {
+    //         // Assuming buffers[i]->data() returns a pointer to the RGBA pixel data
+    //         fwrite((buffers[i])->data(), width*4, /*width * height * 4*/ buffers[0]->size(), ffmpeg);
+    //     } else {
+    //         std::cout << "Frame NOT processed: " << i << std::endl;
+    //     }
+    // }
+
+    int ffmpeg_close_status = pclose(ffmpeg);
+    if (ffmpeg_close_status == -1) {
+        std::cerr << "Error closing ffmpeg process" << std::endl;
+    } else {
+        std::cout << "Video saved to output.mp4" << std::endl;
     }
 
     projectm_playlist_set_preset_switched_event_callback(_playlistHandle, nullptr, nullptr);

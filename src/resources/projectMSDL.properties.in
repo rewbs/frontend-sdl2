@@ -42,7 +42,7 @@ projectM.texturePath = @DEFAULT_TEXTURES_PATH@
 projectM.enableSplash = false
 
 # Preset display duration in seconds. If the time has passed, a soft cut is done to the next preset.
-projectM.displayDuration = 30
+projectM.displayDuration = 999
 
 # If enabled, presets are selected randomly from the current playlist. Otherwise, they are played in order.
 projectM.shuffleEnabled = true
@@ -57,7 +57,7 @@ projectM.meshX = 200
 projectM.meshY = 125
 
 # Transition time in seconds for soft cuts
-projectM.transitionDuration = 3
+projectM.transitionDuration = 0
 
 # Hard cuts are immediate presets transitions on an intensive beat.
 # If enabled, after "hardCutDuration" seconds have passed and an intensive beat is detected,

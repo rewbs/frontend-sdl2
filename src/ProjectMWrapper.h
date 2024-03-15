@@ -32,6 +32,8 @@ public:
      */
     void RenderFrame() const;
 
+    std::unique_ptr<std::vector<unsigned char>> RenderFrameToBuffer() const;
+
     int TargetFPS();
 
     /**
