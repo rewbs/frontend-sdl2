@@ -26,7 +26,16 @@ endif()
 
 find_package(projectM4 REQUIRED COMPONENTS Playlist)
 find_package(SDL2 REQUIRED)
-find_package(Poco REQUIRED COMPONENTS JSON XML Util Foundation)
+
+
+set(CMAKE_PREFIX_PATH "/usr/local")
+set(CMAKE_INCLUDE_PATH "/usr/local/include")
+set(CMAKE_LIBRARY_PATH "/usr/local/lib")
+
+find_package(Poco REQUIRED COMPONENTS JSON XML Util Foundation PATHS /usr/local )
+
+include_directories(${Poco_INCLUDE_DIRS})
+link_directories(${Poco_LIBRARY_DIRS})
 
 include(SDL2Target)
 include(dependencies_check.cmake)

@@ -1,5 +1,14 @@
 #include "RenderLoop.h"
 
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
+#include <iostream>
+#include <vector>
+#include <string>
+#include <sstream>  // Include the stringstream header
+
+#include <cinttypes> // For PRIu64
+
 #include "FPSLimiter.h"
 
 #include <Poco/Util/Application.h>
@@ -17,25 +26,58 @@ RenderLoop::RenderLoop()
 
 void RenderLoop::Run()
 {
+    ma_result result;
+    ma_decoder decoder;
+    std::string filePath = "/home/rewbs/benz.mp3";
     FPSLimiter limiter;
     limiter.TargetFPS(_projectMWrapper.TargetFPS());
 
     projectm_playlist_set_preset_switched_event_callback(_playlistHandle, &RenderLoop::PresetSwitchedEvent, static_cast<void*>(this));
-
     _projectMWrapper.DisplayInitialPreset();
+
+    // Initialize the decoder.
+    result = ma_decoder_init_file(filePath.c_str(), NULL, &decoder);
+    if (result != MA_SUCCESS)
+    {
+        std::cerr << "Failed to initialize decoder." << std::endl;
+        return;
+    }
+
+    // Variables for decoding in chunks.
+    ma_uint64 maxSamples = projectm_pcm_get_max_samples();
+    std::vector<float> pcmBuffer(maxSamples * decoder.outputChannels); // Adjust buffer size based on channel count.
 
     while (!_wantsToQuit)
     {
         limiter.StartFrame();
         PollEvents();
         CheckViewportSize();
-        _audioCapture.FillBuffer();
+        //_audioCapture.FillBuffer();
+
+
+        //maxSamples = projectm_pcm_get_max_samples();
+        result = ma_decoder_read_pcm_frames(&decoder, pcmBuffer.data(), maxSamples, NULL);
+        if (result != MA_SUCCESS)
+        {
+            poco_information(_logger, "End of file or an error has occurred.");
+            break;
+        }
+
+        //std::ostringstream msgStream;
+        //msgStream << "maxSamples: " << maxSamples;
+        //poco_information(_logger, msgStream.str());
+
+
+        // Pass the chunk of PCM data to projectM.
+        projectm_pcm_add_float(_projectMHandle, pcmBuffer.data(), maxSamples * decoder.outputChannels, static_cast<projectm_channels>(decoder.outputChannels));
+
         _projectMWrapper.RenderFrame();
         _sdlRenderingWindow.Swap();
         limiter.EndFrame();
     }
 
     projectm_playlist_set_preset_switched_event_callback(_playlistHandle, nullptr, nullptr);
+    ma_decoder_uninit(&decoder);
 }
 
 void RenderLoop::PollEvents()
