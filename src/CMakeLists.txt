@@ -1,3 +1,5 @@
+add_subdirectory(notifications)
+add_subdirectory(gui)
 
 set(PROJECTM_CONFIGURATION_FILE "${CMAKE_CURRENT_BINARY_DIR}/projectMSDL.properties")
 set(PROJECTM_CONFIGURATION_FILE "${PROJECTM_CONFIGURATION_FILE}" PARENT_SCOPE)
@@ -8,15 +10,15 @@ add_executable(projectMSDL WIN32
         AudioCapture.h
         FPSLimiter.cpp
         FPSLimiter.h
-        main.cpp
         ProjectMSDLApplication.cpp
         ProjectMSDLApplication.h
         ProjectMWrapper.cpp
         ProjectMWrapper.h
         RenderLoop.cpp
         RenderLoop.h
-        SDLRenderingWindow.h
         SDLRenderingWindow.cpp
+        SDLRenderingWindow.h
+        main.cpp
         )
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
@@ -41,6 +43,18 @@ else()
             )
 endif()
 
+# GLEW needs to be initialized if libprojectM depends on it.
+if(TARGET GLEW::glew OR TARGET GLEW::glew_s)
+    target_compile_definitions(projectMSDL
+            PRIVATE
+            USE_GLEW
+            )
+endif()
+
+set_source_files_properties(ProjectMSDLApplication.cpp PROPERTIES
+        COMPILE_DEFINITIONS PROJECTMSDL_CONFIG_LOCATION=\"${DEFAULT_CONFIG_PATH}\"
+        )
+
 target_compile_definitions(projectMSDL
         PRIVATE
         PROJECTMSDL_VERSION="${PROJECT_VERSION}"
@@ -48,6 +62,8 @@ target_compile_definitions(projectMSDL
 
 target_link_libraries(projectMSDL
         PRIVATE
+        ProjectMSDL-GUI
+        ProjectMSDL-Notifications
         libprojectM::playlist
         Poco::Util
         SDL2::SDL2$<$<STREQUAL:${SDL2_LINKAGE},static>:-static>

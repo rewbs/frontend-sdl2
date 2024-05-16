@@ -3,6 +3,10 @@
 # If set to true, the application will start in fullscreen mode
 window.fullscreen = false
 
+# If set to true, the application windows will have no window decorations if the OS supports it.
+# This will possibly make the window immovable.
+window.borderless = false
+
 # Set the monitor to initially display the window on.
 # 0 will use system defaults for placement, 1 and above select a specific monitor.
 # If the number is too large, that last available monitor is used.
@@ -24,19 +28,39 @@ window.fullscreen.height = 0
 window.width = 1024
 window.height = 768
 
+# Override system default window position
+window.overridePosition = false
+
+# If overridePosition is true, the window will be placed at these coordinates.
+# Note this will include any window decoration, to the actual window contents might be offset to the bottom-right.
+window.left = 0
+window.top = 0
+
 # Wait for vertical sync interval before displaying the next frame.
-# This will limit max FPS to the vertical sync frequency but prevent tearing.
+# This will limit max FPS to the vertical sync frequency but prevents tearing.
 window.waitForVerticalSync = true
 
+# Tries to use adaptive vertical sync if waitForVerticalSync is enabled.
+# When using a monitor capable of adaptive sync, setting projectM.fps to 0 gives the best results.
+window.adaptiveVerticalSync = true
+
+# If true, displays the current preset name (and locked state) in the window title.
+# If false, the window title is fixed to "projectM".
+window.displayPresetNameInTitle = true
 
 ### projectM settings
 
-# Path where projectMSDL will search for presets and textures. The directory will be searched recursively.
+# Default path where projectMSDL will search for presets and textures. The directory will be searched recursively.
+# To add additional preset paths, add them as shown in the examples below.
 projectM.presetPath = @DEFAULT_PRESETS_PATH@
+#projectM.presetPath.1 = /another/preset/path
+#projectM.presetPath.2 = /yet/another/preset/path
 
-# Optional path where projectMSDL will search for additional textures. The directory will be searched recursively.
-# Note that textures found under "presetPath" will override textures in the texturePath dir.
+# Default path where projectMSDL will search for additional textures. The directory will be searched recursively.
+# To add additional texture paths, add them as shown in the examples below.
 projectM.texturePath = @DEFAULT_TEXTURES_PATH@
+#projectM.texturePath.1 = /another/texture/path
+#projectM.texturePath.2 = /yet/another/texture/path
 
 # If true, displays the built-in projectM logo preset on startup.
 projectM.enableSplash = false
@@ -47,11 +71,14 @@ projectM.displayDuration = 30
 # If enabled, presets are selected randomly from the current playlist. Otherwise, they are played in order.
 projectM.shuffleEnabled = true
 
+# If enabled, the current/initial preset can only be changed manually.
+projectM.presetLocked = false
+
 # Target FPS, usually 60.
 projectM.fps = 60
 
 # Per-pixel mesh size. This is the grid in which "per-pixel" code is executed, once per cell.
-# Do net set this value too high, as it severely impacts performance. On low-end hardware, set this to a smal
+# Do not set this value too high, as it severely impacts performance. On low-end hardware, set this to a small
 # value, e.g. 64x32. This does *NOT* affect the actual render/shader resolution!
 projectM.meshX = 200
 projectM.meshY = 125

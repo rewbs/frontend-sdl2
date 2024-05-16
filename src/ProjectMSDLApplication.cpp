@@ -8,11 +8,13 @@
 #include "ProjectMWrapper.h"
 #include "RenderLoop.h"
 #include "SDLRenderingWindow.h"
+#include "gui/ProjectMGUI.h"
 
 #include <Poco/Environment.h>
 #include <Poco/File.h>
 
 #include <Poco/Util/HelpFormatter.h>
+#include <Poco/Util/PropertyFileConfiguration.h>
 
 #include <iostream>
 
@@ -23,6 +25,7 @@ ProjectMSDLApplication::ProjectMSDLApplication()
     addSubsystem(new SDLRenderingWindow);
     addSubsystem(new ProjectMWrapper);
     addSubsystem(new AudioCapture);
+    addSubsystem(new ProjectMGUI);
 }
 
 const char* ProjectMSDLApplication::name() const
@@ -30,20 +33,78 @@ const char* ProjectMSDLApplication::name() const
     return "projectMSDL";
 }
 
+ProjectMSDLApplication& ProjectMSDLApplication::instance()
+{
+    return dynamic_cast<ProjectMSDLApplication&>(Poco::Util::Application::instance());
+}
+
+Poco::AutoPtr<Poco::Util::PropertyFileConfiguration> ProjectMSDLApplication::UserConfiguration()
+{
+    return _userConfiguration;
+}
+
+Poco::AutoPtr<Poco::Util::MapConfiguration> ProjectMSDLApplication::CommandLineConfiguration()
+{
+    return _commandLineOverrides;
+}
+
 void ProjectMSDLApplication::initialize(Poco::Util::Application& self)
 {
-    config().add(_commandLineOverrides, PRIO_APPLICATION);
+    // Application settings are PRIO_APPLICATION, higher values have lower precedence.
+    // So we put command-line overrides just below settings changed in the UI.
+    config().add(_commandLineOverrides, PRIO_APPLICATION + 10);
 
-    loadConfiguration(PRIO_DEFAULT);
+    std::string configFileName = config().getString("application.baseName") + ".properties";
+    Poco::Path userConfigurationDir = Poco::Path::configHome();
+    userConfigurationDir.makeDirectory().append("projectM/");
 
-    // Try to load user's custom configuration file on top.
-    Poco::Path userConfigurationFile =
-        Poco::Path::configHome() + "projectM" + Poco::Path::separator() + "projectMSDL.properties";
-    if (Poco::File(userConfigurationFile).exists())
+    try
     {
-        loadConfiguration(userConfigurationFile.toString(), PRIO_DEFAULT - 10);
+        if (loadConfiguration(PRIO_DEFAULT) == 0)
+        {
+            // The file may be located in the ../Resources bundle dir on macOS, elsewhere relative
+            // to the executable or within an absolute path.
+            // By setting and retrieving the compiled-in default, we can make use of POCO's variable replacement.
+            // This allows using ${application.dir} etc. in the path.
+            config().setString("application.defaultConfigurationFile", PROJECTMSDL_CONFIG_LOCATION);
+            std::string configPath = config().getString("application.defaultConfigurationFile", "");
+            if (!configPath.empty())
+            {
+                Poco::Path configFilePath(configPath);
+                configFilePath.makeDirectory().setFileName(configFileName);
+                if (Poco::File(configFilePath).exists())
+                {
+                    loadConfiguration(configFilePath.toString(), PRIO_DEFAULT);
+                }
+
+            }
+        }
+    }
+    catch (Poco::Exception& ex)
+    {
+        poco_error_f1(logger(), "Failed to load default configuration file: %s", ex.displayText());
     }
 
+    // Try to load user's custom configuration file.
+    Poco::Path userConfigurationFile = userConfigurationDir;
+    userConfigurationFile.setFileName(configFileName);
+    try
+    {
+        if (!Poco::File(userConfigurationFile).exists())
+        {
+            Poco::File(userConfigurationDir).createDirectories();
+            Poco::File(userConfigurationFile).createFile();
+        }
+        _userConfiguration->load(userConfigurationFile.toString());
+        config().add(_userConfiguration, PRIO_DEFAULT - 10);
+
+        // Store the configuration file path
+        _commandLineOverrides->setString("app.UserConfigurationFile", userConfigurationFile.toString());
+    }
+    catch (Poco::Exception& ex)
+    {
+        poco_error_f1(logger(), "Failed to load/create user configuration file: %s", ex.displayText());
+    }
 
     Application::initialize(self);
 }
@@ -104,6 +165,11 @@ void ProjectMSDLApplication::defineOptions(Poco::Util::OptionSet& options)
                              false, "<0/1>", true)
                           .binding("window.waitForVerticalSync", _commandLineOverrides));
 
+    options.addOption(Option("vsyncAdaptive", "",
+                             "If true and vsync is enabled, tries to use adaptive vsync. Set FPS to 0 for best results.",
+                             false, "<0/1>", true)
+                          .binding("window.adaptiveVerticalSync", _commandLineOverrides));
+
     options.addOption(Option("width", "", "Initial window width.",
                              false, "<number>", true)
                           .binding("window.width", _commandLineOverrides));
@@ -156,10 +222,9 @@ void ProjectMSDLApplication::defineOptions(Poco::Util::OptionSet& options)
                              false, "<number>", true)
                           .binding("projectM.hardCutSensitivity", _commandLineOverrides));
 
-    options.addOption(Option("beatSensitivity", "", "Beat sensitivity. Between 0.0 and 5.0. Default 1.0.",
+    options.addOption(Option("beatSensitivity", "", "Beat sensitivity. Between 0.0 and 2.0. Default 1.0.",
                              false, "<number>", true)
                           .binding("projectM.beatSensitivity", _commandLineOverrides));
-
 }
 
 int ProjectMSDLApplication::main(POCO_UNUSED const std::vector<std::string>& args)
@@ -208,3 +273,4 @@ void ProjectMSDLApplication::ListAudioDevices(POCO_UNUSED const std::string& nam
 {
     _commandLineOverrides->setBool("audio.listDevices", true);
 }
+
