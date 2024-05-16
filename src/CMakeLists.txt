@@ -8,6 +8,8 @@ configure_file(resources/projectMSDL.properties.in "${PROJECTM_CONFIGURATION_FIL
 add_executable(projectMSDL WIN32
         AudioCapture.cpp
         AudioCapture.h
+        FileMonitor.cpp
+        FileMonitor.h
         FPSLimiter.cpp
         FPSLimiter.h
         ProjectMSDLApplication.cpp

@@ -5,6 +5,13 @@
 
 #include "notifications/DisplayToastNotification.h"
 
+
+#include <stdio.h>
+#include <sys/stat.h>
+#include <filesystem>
+#include <chrono>
+#include <thread>
+
 #include <Poco/Delegate.h>
 #include <Poco/File.h>
 #include <Poco/NotificationCenter.h>
@@ -36,6 +43,21 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
 
         auto presetPaths = GetPathListWithDefault("presetPath", app.config().getString("application.dir", ""));
         auto texturePaths = GetPathListWithDefault("texturePath", app.config().getString("", ""));
+
+        auto presetFile = _projectMConfigView->getString("presetFile", "");
+        if (!presetFile.empty())
+        {
+            struct stat buffer;
+            if (stat(presetFile.c_str(), &buffer) != 0)
+            {
+                throw std::runtime_error("projectM initialization failed: --presetFile was specified, but file could not be opened: " + presetFile);
+            }
+
+            presetPaths.clear();
+            presetPaths.push_back(presetFile);
+            fileMonitor_ = std::make_unique<FileMonitor>(presetFile, [this, presetFile]() { this->forceReloadPreset(presetFile); }, std::chrono::milliseconds(1000));
+            _userConfig->setBool("projectM.presetLocked", true);
+        }
 
         _projectM = projectm_create();
         if (!_projectM)
@@ -113,6 +135,12 @@ void ProjectMWrapper::initialize(Poco::Util::Application& app)
     _userConfig->propertyChanged += Poco::delegate(this, &ProjectMWrapper::OnConfigurationPropertyChanged);
     _userConfig->propertyRemoved += Poco::delegate(this, &ProjectMWrapper::OnConfigurationPropertyRemoved);
 }
+
+void ProjectMWrapper::forceReloadPreset(std::string presetFile) {
+    std::cout << "Reloading preset: " << presetFile << std::endl;
+    projectm_load_preset_file(_projectM, presetFile.c_str(), false);
+}
+
 
 void ProjectMWrapper::uninitialize()
 {

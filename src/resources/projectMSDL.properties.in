@@ -97,6 +97,8 @@ projectM.hardCutDuration = 20
 projectM.aspectCorrectionEnabled = true
 
 
+projectM.presetFile = /Users/home/code/projectm/presets/tests/240-wave-smooth-00.milk
+
 ### Logging settings
 
 # For detailed information on how to configure logging, please refer to the POCO documentation:

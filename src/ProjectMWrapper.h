@@ -2,6 +2,8 @@
 
 #include "notifications/PlaybackControlNotification.h"
 
+#include "FileMonitor.h"
+
 #include <projectM-4/projectM.h>
 #include <projectM-4/playlist.h>
 
@@ -75,6 +77,8 @@ public:
      */
     std::string ProjectMRuntimeVersion();
 
+    std::unique_ptr<FileMonitor> fileMonitor_;
+
 private:
     /**
      * @brief projectM callback. Called whenever a preset is switched.
@@ -100,6 +104,9 @@ private:
      */
     void OnConfigurationPropertyRemoved(const std::string& key);
 
+
+    void forceReloadPreset(std::string presetFile);
+
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _userConfig; //!< View of the "projectM" configuration subkey in the "user" configuration.
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _projectMConfigView; //!< View of the "projectM" configuration subkey in the "effective" configuration.
 
@@ -109,4 +116,6 @@ private:
     Poco::NObserver<ProjectMWrapper, PlaybackControlNotification> _playbackControlNotificationObserver{*this, &ProjectMWrapper::PlaybackControlNotificationHandler};
 
     Poco::Logger& _logger{Poco::Logger::get("SDLRenderingWindow")}; //!< The class logger.
+
+
 };

@@ -30,6 +30,9 @@ void RenderLoop::Run()
 
     _projectMWrapper.DisplayInitialPreset();
 
+    u_int64_t frame = 0;
+    int presetModCheckFrameInterval = _projectMWrapper.TargetFPS()/4;
+
     while (!_wantsToQuit)
     {
         limiter.TargetFPS(_projectMWrapper.TargetFPS());
@@ -47,6 +50,14 @@ void RenderLoop::Run()
 
         // Pass projectM the actual FPS value of the last frame.
         _projectMWrapper.UpdateRealFPS(limiter.FPS());
+
+        // Reload preset if it has changed. Check every ~200ms
+        if (_projectMWrapper.fileMonitor_ && frame % presetModCheckFrameInterval == 0)
+        {
+            _projectMWrapper.fileMonitor_->poll();
+        }
+
+        frame++;   
     }
 
     notificationCenter.removeObserver(_quitNotificationObserver);

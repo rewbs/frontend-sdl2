@@ -225,6 +225,10 @@ void ProjectMSDLApplication::defineOptions(Poco::Util::OptionSet& options)
     options.addOption(Option("beatSensitivity", "", "Beat sensitivity. Between 0.0 and 2.0. Default 1.0.",
                              false, "<number>", true)
                           .binding("projectM.beatSensitivity", _commandLineOverrides));
+
+    options.addOption(Option("presetFile", "q", "Single preset file to load and monitor for changes. Overrides presetPath.",
+                             false, "<path>", true)
+                          .binding("projectM.presetFile", _commandLineOverrides));                          
 }
 
 int ProjectMSDLApplication::main(POCO_UNUSED const std::vector<std::string>& args)
