@@ -1,9 +1,10 @@
 #include "AudioCaptureImpl_WASAPI.h"
 
-#include <projectM-4/projectM.h>
+#include "notifications/AudioDataAvailableNotification.h"
 
 #include <Poco/UnicodeConverter.h>
 
+#include <Poco/NotificationCenter.h>
 #include <functiondiscoverykeys_devpkey.h>
 #include <mmdeviceapi.h>
 #include <objbase.h>
@@ -42,9 +43,8 @@ std::map<int, std::string> AudioCaptureImpl::AudioDeviceList()
     return deviceList;
 }
 
-void AudioCaptureImpl::StartRecording(projectm* projectMHandle, int audioDeviceIndex)
+void AudioCaptureImpl::StartRecording(int audioDeviceIndex)
 {
-    _projectMHandle = projectMHandle;
     _currentAudioDeviceIndex = audioDeviceIndex;
 
     _isCapturing = true;
@@ -74,7 +74,26 @@ void AudioCaptureImpl::NextAudioDevice()
     // Will wrap around to loopback capture device (-1).
     int nextAudioDeviceId = ((_currentAudioDeviceIndex + 2) % (static_cast<int>(captureDevices.size()) + 1)) - 1;
 
-    StartRecording(_projectMHandle, nextAudioDeviceId);
+    StartRecording(nextAudioDeviceId);
+}
+
+void AudioCaptureImpl::AudioDeviceIndex(int index)
+{
+    IMMDeviceEnumerator* enumerator{GetDeviceEnumerator()};
+    auto captureDevices{GetAudioDeviceList(enumerator)};
+    enumerator->Release();
+
+    if (index >= -1 && index < static_cast<int>(captureDevices.size()))
+    {
+        _currentAudioDeviceIndex = index;
+        StopRecording();
+        StartRecording(index);
+    }
+}
+
+int AudioCaptureImpl::AudioDeviceIndex() const
+{
+    return _currentAudioDeviceIndex;
 }
 
 std::string AudioCaptureImpl::AudioDeviceName() const
@@ -195,9 +214,9 @@ bool AudioCaptureImpl::OpenAudioDevice(IMMDevice* device, bool useLoopback)
 {
     // activate an IAudioClient
     HRESULT result = device->Activate(__uuidof(IAudioClient),
-                              CLSCTX_ALL,
-                              nullptr,
-                              reinterpret_cast<void**>(&_audioClient));
+                                      CLSCTX_ALL,
+                                      nullptr,
+                                      reinterpret_cast<void**>(&_audioClient));
     if (FAILED(result))
     {
         poco_error_f1(_logger, "IMMDevice::Activate(IAudioClient) failed: result = 0x%08?x", result);
@@ -428,7 +447,10 @@ void AudioCaptureImpl::CaptureThread()
 
                 if (framesAvailable > 0 && data != nullptr)
                 {
-                    projectm_pcm_add_float(_projectMHandle, reinterpret_cast<float*>(data), framesAvailable, static_cast<projectm_channels>(_channels));
+                    Poco::NotificationCenter::defaultCenter().postNotification(
+                        new AudioDataAvailableNotification(_channels,
+                                                           reinterpret_cast<float*>(data),
+                                                           framesAvailable * _channels));
                 }
 
                 _audioCaptureClient->ReleaseBuffer(framesAvailable);

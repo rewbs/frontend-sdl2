@@ -1,8 +1,11 @@
 #pragma once
 
+#include "notifications/UpdateWindowTitleNotification.h"
+
 #include <SDL2/SDL.h>
 
 #include <Poco/Logger.h>
+#include <Poco/NObserver.h>
 
 #include <Poco/Util/Subsystem.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -30,12 +33,6 @@ public:
     void GetDrawableSize(int& width, int& height) const;
 
     /**
-     * @brief Sets the window title.
-     * @param title The new window title.
-     */
-    void SetTitle(const std::string& title) const;
-
-    /**
      * Swaps the OpenGL front- and back buffers.
      */
     void Swap() const;
@@ -60,6 +57,12 @@ public:
     void Windowed();
 
     /**
+     * @brief Sets the visibility of the mouse cursor
+     * @param visible true if the cursor should be displayed, false otherwise.
+     */
+    void ShowCursor(bool visible);
+
+    /**
      * @brief Moves the current window to the next display.
      *
      * Internally, this is done by finding the current display using the X/Y coords, then move it to the next
@@ -67,6 +70,31 @@ public:
      * are made.
      */
     void NextDisplay();
+
+    /**
+     * @brief Returns the ID of the current display the window is shown on.
+     * @return
+     */
+    int GetCurrentDisplay();
+
+    /**
+     * @brief Returns the dimensions of the window.
+     * @param [out] width The width of the window.
+     * @param [out] height The height of the window.
+     */
+    void GetWindowSize(int& width, int& height);
+
+    /**
+     * @brief Returns the position of the window.
+     * @param [out] left The left position of the window.
+     * @param [out] top Top top position of the window.
+     * @param [in] relative If true, returns the position relative to the current display.
+     */
+    void GetWindowPosition(int& left, int& top, bool relative = false);
+
+    SDL_Window* GetRenderingWindow() const;
+
+    SDL_GLContext GetGlContext() const;
 
 protected:
 
@@ -85,10 +113,41 @@ protected:
      */
     void DumpOpenGLInfo();
 
+    /**
+     * @brief Receives notifications requesting an update of the window title.
+     * @param notification The update notification.
+     */
+    void UpdateWindowTitleNotificationHandler(const Poco::AutoPtr<UpdateWindowTitleNotification>& notification);
+
+    /**
+     * @brief Updates the window title.
+     */
+    void UpdateWindowTitle();
+
+    /**
+     * @brief Updates the swap interval from the user settings.
+     */
+    void UpdateSwapInterval();
+
+    /**
+     * @brief Event callback if a configuration value has changed.
+     * @param property The key and value that has been changed.
+     */
+    void OnConfigurationPropertyChanged(const Poco::Util::AbstractConfiguration::KeyValue& property);
+
+    /**
+     * @brief Event callback if a configuration value has been removed.
+     * @param key The key of the removed property.
+     */
+    void OnConfigurationPropertyRemoved(const std::string& key);
+
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> _userConfig; //!< View of the "projectM" configuration subkey in the "user" configuration.
     Poco::AutoPtr<Poco::Util::AbstractConfiguration> _config; //!< View of the "window" configuration subkey.
 
     SDL_Window* _renderingWindow{ nullptr }; //!< Pointer to the SDL window used for rendering.
     SDL_GLContext _glContext{ nullptr }; //!< Pointer to the OpenGL context associated with the window.
+
+    Poco::NObserver<SDLRenderingWindow, UpdateWindowTitleNotification> _updateWindowTitleObserver{*this, &SDLRenderingWindow::UpdateWindowTitleNotificationHandler}; //!< the observer for title update notifications
 
     Poco::Logger& _logger{ Poco::Logger::get("SDLRenderingWindow") }; //!< The class logger.
 
